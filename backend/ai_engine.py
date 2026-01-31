@@ -8,7 +8,7 @@ from pypdf import PdfReader
 
 # --- CONFIGURATION ---
 # 1. API KEY
-GOOGLE_API_KEY = "AIzaSyAfWI75rt1w2ZUHaBIHXOWRpNRs-QxF7VA"  # <--- PASTE KEY HERE
+GOOGLE_API_KEY = "YOUR_API_KEY"
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # 2. MODELS
