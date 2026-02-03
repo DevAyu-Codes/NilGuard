@@ -7,9 +7,15 @@ import traceback
 from pypdf import PdfReader
 
 # --- CONFIGURATION ---
+<<<<<<< HEAD
 # 1. OPENAI KEY (GPT-4o)
 OPENAI_API_KEY = "YOUR_API_KEY"
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
+=======
+# 1. API KEY
+GOOGLE_API_KEY = "YOUR_API_KEY"
+genai.configure(api_key=GOOGLE_API_KEY)
+>>>>>>> 9cc5f4aa39e9fa45b4b4cb528679d49382c635db
 
 # 2. EMBEDDING MODEL (Hugging Face - Local)
 embed_model = SentenceTransformer('all-MiniLM-L6-v2') 
