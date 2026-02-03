@@ -8,44 +8,28 @@ function App() {
   const [user, setUser] = useState(null)
   const [username, setUsername] = useState("")
   const [password, setPassword] = useState("")
-  const [modal, setModal] = useState(null) // State for Popups
+  const [modal, setModal] = useState(null)
 
   const handleLogin = async () => {
     try {
       const res = await axios.post("http://localhost:8000/login", { username, password })
       setUser(res.data)
     } catch (e) {
-      setModal({ type: 'error', title: 'Access Denied', msg: 'Invalid Credentials. Try student1 / 123' })
+      setModal({ type: 'error', title: 'Access Denied', msg: 'Invalid Credentials.' })
     }
   }
 
-  // LOGIN SCREEN
   if (!user) {
     return (
       <div className="login-container">
         {modal && <Modal data={modal} close={() => setModal(null)} />}
-        
         <div className="login-box">
           <div style={{ fontSize: '3rem', marginBottom: '10px' }}>🛡️</div>
           <h1 className="brand" style={{marginBottom: '10px'}}>NIL Guard</h1>
           <p style={{color: '#a1a1aa', marginBottom: '30px', fontSize: '0.9rem'}}>Secure Compliance Portal</p>
-          
-          <input 
-            className="login-input" 
-            placeholder="Username" 
-            onChange={e => setUsername(e.target.value)} 
-          />
-          <input 
-            className="login-input" 
-            type="password" 
-            placeholder="Password" 
-            onChange={e => setPassword(e.target.value)} 
-            onKeyDown={e => e.key === 'Enter' && handleLogin()}
-          />
-          
-          <button className="btn-primary" onClick={handleLogin} style={{marginTop: '20px'}}>
-            Access Dashboard
-          </button>
+          <input className="login-input" placeholder="Username" onChange={e => setUsername(e.target.value)} />
+          <input className="login-input" type="password" placeholder="Password" onChange={e => setPassword(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleLogin()} />
+          <button className="btn-primary" onClick={handleLogin} style={{marginTop: '20px'}}>Access Dashboard</button>
         </div>
       </div>
     )
@@ -60,11 +44,13 @@ function Dashboard({ user, setUser }) {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState(null)
   const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "student" })
+  
+  // Track which contract is being acted upon
+  const [pendingContract, setPendingContract] = useState(null)
 
-  // State to hold the ID of the contract we *want* to send, while asking for permission
-  const [pendingContractId, setPendingContractId] = useState(null)
-
-  useEffect(() => { fetchContracts() }, [])
+  useEffect(() => { 
+    fetchContracts(); 
+  }, [])
 
   const fetchContracts = async () => {
     try {
@@ -78,77 +64,78 @@ function Dashboard({ user, setUser }) {
     setLoading(true);
     const formData = new FormData();
     formData.append("file", file);
-    
     try {
       await axios.post(`http://localhost:8000/analyze?user_id=${user.user_id}`, formData);
       setFile(null); 
       fetchContracts(); 
       setModal({ type: 'success', title: 'Success!', msg: 'Contract analyzed successfully.' })
-    } catch (e) { 
-      setModal({ type: 'error', title: 'Upload Failed', msg: 'Something went wrong with the AI.' }) 
-    }
+    } catch (e) { setModal({ type: 'error', title: 'Upload Failed', msg: 'AI Error.' }) }
     setLoading(false);
   }
 
-  // 1. User clicks "Send to NILGO" -> Show Confirmation Modal
-  const initiateSendToNilgo = (contractId) => {
-    setPendingContractId(contractId)
-    setModal({ type: 'confirm', title: 'Confirm Submission', msg: 'Are you sure you want to disclose this to the Compliance Office?' })
+  // --- STUDENT: SUBMISSION LOGIC ---
+  const handleSubmissionChoice = (choice) => {
+    if (!pendingContract) return;
+
+    if (choice === 'email') {
+      // Draft Email Logic
+      const recipient = "compliance@nil-guard.edu";
+      const subject = `NIL Contract Submission: ${pendingContract.filename}`;
+      const body = `Dear Compliance Office,\n\nI am submitting the attached contract for review.\n\nFile Reference: ${pendingContract.filename}\n\nStudent: ${user.name}\nID: ${user.user_id}`;
+      
+      window.open(`mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+      setModal(null);
+    } 
+    else if (choice === 'website') {
+      // API Logic
+      updateContractStatus(pendingContract._id, "Sent_to_Compliance");
+    }
   }
 
-  // 2. User clicks "Confirm" in Modal -> Actually Send
-  const confirmSendToNilgo = async () => {
+  // --- SHARED: STATUS UPDATER ---
+  const updateContractStatus = async (id, newStatus) => {
     try {
-      await axios.post("http://localhost:8000/send-to-nilgo", {
-        contract_id: pendingContractId,
-        status: "Sent_to_Compliance"
-      });
+      await axios.post("http://localhost:8000/update-status", { contract_id: id, status: newStatus });
       fetchContracts();
-      setModal({ type: 'success', title: 'Submitted', msg: 'Contract sent to NILGO Compliance.' })
-    } catch(e) { 
-      setModal({ type: 'error', title: 'Error', msg: 'Could not send status update.' }) 
-    }
-    setPendingContractId(null) // Reset pending ID
+      
+      let msg = "Status updated.";
+      if (newStatus === "Sent_to_Compliance") msg = "Contract sent to Admin Dashboard.";
+      if (newStatus === "Approved") msg = "Contract Approved!";
+      if (newStatus === "Rejected") msg = "Contract Rejected.";
+      
+      setModal({ type: 'success', title: 'Success', msg: msg });
+    } catch(e) { setModal({ type: 'error', title: 'Error', msg: 'Failed to update status.' }) }
+    setPendingContract(null);
   }
 
   const handleRegister = async () => {
     try {
-      const res = await axios.post("http://localhost:8000/register", newUser);
-      setModal({ type: 'success', title: 'Account Created', msg: res.data.message })
+      await axios.post("http://localhost:8000/register", newUser);
+      setModal({ type: 'success', title: 'Account Created', msg: 'User added.' })
       setNewUser({ name: "", username: "", password: "", role: "student" });
-    } catch (e) {
-      setModal({ type: 'error', title: 'Registration Failed', msg: e.response?.data?.detail || "Error" })
-    }
+    } catch (e) { setModal({ type: 'error', title: 'Failed', msg: e.response?.data?.detail }) }
   }
 
   return (
     <div className="dashboard-container">
-      {/* POPUP COMPONENT */}
+      {/* MODAL MANAGER */}
       {modal && (
         <Modal 
           data={modal} 
           close={() => setModal(null)} 
-          onConfirm={confirmSendToNilgo} 
+          onChoice={handleSubmissionChoice} // For the new Choice Modal
         />
       )}
 
-      {/* NAVBAR */}
       <nav className="navbar">
-        <div>
-          <div className="brand" style={{fontSize: '1.2rem'}}>🛡️ NIL Guard</div>
-          <div style={{fontSize: '0.8rem', color: '#a1a1aa'}}>Compliance Portal</div>
-        </div>
-        
+        <div><div className="brand" style={{fontSize: '1.2rem'}}>🛡️ NIL Guard</div><div style={{fontSize: '0.8rem', color: '#a1a1aa'}}>Compliance Portal</div></div>
         <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-          <div style={{textAlign: 'right'}}>
-            <div style={{fontWeight: 'bold'}}>{user.name}</div>
-            <div style={{fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase'}}>{user.role}</div>
-          </div>
+          <div style={{textAlign: 'right'}}><div style={{fontWeight: 'bold'}}>{user.name}</div><div style={{fontSize: '0.75rem', color: '#a1a1aa', textTransform: 'uppercase'}}>{user.role}</div></div>
           <button className="btn-logout" onClick={() => setUser(null)}>Logout</button>
         </div>
       </nav>
 
-      {/* ADMIN VIEW */}
+      {/* --- ADMIN: CREATE USER --- */}
       {user.role === 'admin' && (
         <div className="glass-card">
           <h2 style={{marginBottom: '1.5rem', color: '#a78bfa'}}>👤 User Management</h2>
@@ -160,12 +147,12 @@ function Dashboard({ user, setUser }) {
               <option value="student">Student</option>
               <option value="admin">Administrator</option>
             </select>
-            <button className="btn-primary" style={{background: 'linear-gradient(135deg, #8b5cf6, #d946ef)'}} onClick={handleRegister}>Create Account</button>
+            <button className="btn-primary" style={{gridColumn: '1 / -1', marginTop: '10px'}} onClick={handleRegister}>Create Account</button>
           </div>
         </div>
       )}
 
-      {/* STUDENT VIEW */}
+      {/* --- STUDENT: UPLOAD --- */}
       {user.role === 'student' && (
         <div className="glass-card">
           <h2 style={{marginBottom: '1rem', color: 'white'}}>📄 Analyze New Contract</h2>
@@ -180,79 +167,89 @@ function Dashboard({ user, setUser }) {
         </div>
       )}
 
-      {/* HISTORY */}
+      {/* --- HISTORY --- */}
       <h3 style={{marginBottom: '1rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px', fontSize: '0.9rem'}}>
-        {user.role === 'admin' ? "Student Submissions" : "Recent Reports"}
+        {user.role === 'admin' ? "Compliance Queue" : "Recent Reports"}
       </h3>
-
       {contracts.length === 0 && <div style={{textAlign: 'center', color: '#52525b', padding: '3rem'}}>No contracts found.</div>}
-
+      
       {contracts.map((c, i) => (
-        <div key={i} className="glass-card">
+        <div key={i} className="glass-card" style={{
+            borderColor: c.status === 'Approved' ? '#10b981' : c.status === 'Rejected' ? '#ef4444' : 'rgba(255,255,255,0.08)'
+        }}>
           <div className="result-header">
             <div>
               <div style={{fontWeight: 'bold', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '10px'}}>
                 <span>📄 {c.filename}</span>
-                {c.file_url && (
-                  <a href={c.file_url} target="_blank" rel="noopener noreferrer"
-                    style={{fontSize: '0.75rem', color: '#3b82f6', textDecoration: 'none', border: '1px solid #3b82f6', padding: '2px 8px', borderRadius: '4px'}}>
-                    View PDF ↗
-                  </a>
-                )}
+                <span style={{fontSize:'0.6rem', padding:'2px 6px', borderRadius:'4px', background:'#10b981', color:'white'}}>GPT-4o</span>
+                {c.file_url && <a href={c.file_url} target="_blank" rel="noopener noreferrer" style={{fontSize: '0.75rem', color: '#3b82f6', textDecoration: 'none', border: '1px solid #3b82f6', padding: '2px 8px', borderRadius: '4px'}}>View PDF ↗</a>}
               </div>
               <div style={{fontSize: '0.8rem', color: '#a1a1aa'}}>ID: {c._id}</div>
             </div>
             
-            <div style={{display:'flex', gap:'15px', alignItems:'center'}}>
-              <span className="status-badge" style={{
-                background: c.status === 'Sent_to_Compliance' ? '#7c3aed' : '#27272a',
-                color: c.status === 'Sent_to_Compliance' ? '#fff' : '#a1a1aa'
-              }}>
-                {c.status.replace(/_/g, " ")}
+            <div style={{display:'flex', gap:'10px', alignItems:'center'}}>
+              {/* STATUS BADGE - LOGIC UPDATE */}
+              <span className={`status-badge status-${c.status.toLowerCase()}`}>
+                {c.status === 'Sent_to_Compliance' 
+                  ? (user.role === 'admin' ? "⏳ Pending Review" : "✓ Sent to Compliance") 
+                  : c.status.replace(/_/g, " ")}
               </span>
               
-              {user.role === 'student' && c.status !== 'Sent_to_Compliance' && (
-                <button className="nilgo-btn" onClick={() => initiateSendToNilgo(c._id)}>
+              {/* STUDENT ACTIONS */}
+              {user.role === 'student' && c.status === 'AI_Reviewed' && (
+                <button className="nilgo-btn" onClick={() => { setPendingContract(c); setModal({ type: 'submission_choice', title: 'Submit Contract' }) }}>
                   🚀 Send to NILGO
                 </button>
               )}
+
+              {/* ADMIN ACTIONS */}
+              {user.role === 'admin' && c.status === 'Sent_to_Compliance' && (
+                <div style={{display: 'flex', gap: '5px'}}>
+                   <button className="btn-action btn-approve" onClick={() => updateContractStatus(c._id, "Approved")}>Approve</button>
+                   <button className="btn-action btn-reject" onClick={() => updateContractStatus(c._id, "Rejected")}>Reject</button>
+                </div>
+              )}
             </div>
           </div>
-          <div className="markdown-body">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{c.analysis}</ReactMarkdown>
-          </div>
+          <div className="markdown-body"><ReactMarkdown remarkPlugins={[remarkGfm]}>{c.analysis}</ReactMarkdown></div>
         </div>
       ))}
     </div>
   )
 }
 
-// --- REUSABLE MODAL COMPONENT ---
-function Modal({ data, close, onConfirm }) {
-  const isConfirm = data.type === 'confirm'
-  
+function Modal({ data, close, onChoice }) {
+  // SPECIAL MODAL: Submission Choice
+  if (data.type === 'submission_choice') {
+    return (
+      <div className="modal-overlay" onClick={close}>
+        <div className="modal-content" onClick={e => e.stopPropagation()}>
+          <div style={{fontSize: '2rem', marginBottom: '10px'}}>🚀</div>
+          <div className="modal-title">{data.title}</div>
+          <div className="modal-body">How would you like to submit this contract?</div>
+          <div className="modal-actions" style={{flexDirection: 'column', gap: '10px'}}>
+            <button className="btn-modal" style={{background: '#3b82f6', color: 'white'}} onClick={() => onChoice('email')}>
+              ✉️ Send via Email (Draft)
+            </button>
+            <button className="btn-modal" style={{background: '#8b5cf6', color: 'white'}} onClick={() => onChoice('website')}>
+              🌐 Send on Website (Instant)
+            </button>
+            <button className="btn-modal btn-cancel" onClick={close} style={{marginTop:'10px'}}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // STANDARD MODALS
   return (
     <div className="modal-overlay" onClick={close}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
-        <div style={{fontSize: '2rem', marginBottom: '10px'}}>
-          {data.type === 'error' ? '❌' : data.type === 'success' ? '✅' : '⚠️'}
-        </div>
+        <div style={{fontSize: '2rem', marginBottom: '10px'}}>{data.type === 'error' ? '❌' : '✅'}</div>
         <div className="modal-title">{data.title}</div>
         <div className="modal-body">{data.msg}</div>
-        
         <div className="modal-actions">
-          {isConfirm ? (
-            <>
-              <button className="btn-modal btn-cancel" onClick={close}>Cancel</button>
-              <button className="btn-modal" style={{background: 'var(--accent-secondary)', color: 'white'}} onClick={() => { onConfirm(); close(); }}>
-                Confirm
-              </button>
-            </>
-          ) : (
-            <button className="btn-modal" style={{background: 'var(--accent-primary)', color: 'white'}} onClick={close}>
-              OK
-            </button>
-          )}
+           <button className="btn-modal" style={{background: 'var(--accent-primary)', color: 'white'}} onClick={close}>OK</button>
         </div>
       </div>
     </div>

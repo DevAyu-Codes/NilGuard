@@ -30,3 +30,9 @@ NCAA RULE 6: CONFLICTS WITH TEAM CONTRACTS.
 A student-athlete may not enter into an NIL agreement that conflicts with a team contract. 
 For example, if the university has an exclusive contract with Nike, the athlete may not wear Adidas gear during team activities, practices, or games. 
 Athletes may wear competitor gear during their own private time.
+
+STATE LAW 1: GEORGIA NIL ACT.
+Post-secondary institutions in Georgia may require student-athletes to share up to 75% of their NIL compensation with a collective fund.
+
+STATE LAW 2: TEXAS NIL BILL.
+Texas law prohibits student-athletes from entering into contracts that conflict with institutional sponsorship agreements (e.g., wearing Adidas if the school is Nike).

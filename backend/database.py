@@ -9,8 +9,8 @@ users_collection = db.users
 def seed_users():
     if users_collection.count_documents({}) == 0:
         users_collection.insert_many([
-            {"username": "student1", "password": "123", "role": "student", "name": "Mike Ross"},
-            {"username": "admin1", "password": "123", "role": "admin", "name": "Sports Administrator"}
+            {"username": "student1", "password": "123", "role": "student", "name": "Demo Student"},
+            {"username": "admin1", "password": "123", "role": "admin", "name": "Compliance Officer"}
         ])
         print("Test users created: student1/123 and admin1/123")
 

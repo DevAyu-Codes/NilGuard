@@ -1,5 +1,5 @@
 import os
-import google.generativeai as genai
+from openai import OpenAI
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
@@ -7,69 +7,45 @@ import traceback
 from pypdf import PdfReader
 
 # --- CONFIGURATION ---
-# 1. API KEY
-GOOGLE_API_KEY = "AIzaSyAfWI75rt1w2ZUHaBIHXOWRpNRs-QxF7VA"  # <--- PASTE KEY HERE
-genai.configure(api_key=GOOGLE_API_KEY)
+# 1. OPENAI KEY (GPT-4o)
+OPENAI_API_KEY = "YOUR_API_KEY"
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 2. MODELS
-# Chat Model (Google)
-chat_model = genai.GenerativeModel('gemini-flash-latest')
-
-# Search Model (Hugging Face)
-# This downloads a small, free model to your computer
-print("Loading Hugging Face model... (this happens only once)")
+# 2. EMBEDDING MODEL (Hugging Face - Local)
 embed_model = SentenceTransformer('all-MiniLM-L6-v2') 
 
-# --- KNOWLEDGE BASE LOGIC ---
+# --- KNOWLEDGE BASE ---
 RULES_FILE = "ncaa_rules.txt"
 rules_embeddings = None
 rules_chunks = []
 
 def load_knowledge_base():
-    """Reads the Rules file and converts it into searchable numbers (vectors)."""
     global rules_embeddings, rules_chunks
-    
     if not os.path.exists(RULES_FILE):
-        print(f"WARNING: {RULES_FILE} not found! Using hardcoded backup.")
         return
-
-    # Read the text file
     with open(RULES_FILE, 'r') as f:
         text = f.read()
-    
-    # Split into chunks (Paragraphs)
-    # We split by double newline to get separate rules
+    # Split by double newline to get distinct rules
     rules_chunks = [chunk.strip() for chunk in text.split('\n\n') if chunk.strip()]
-    
-    # Convert text to numbers using Hugging Face
-    print(f"Indexing {len(rules_chunks)} rules from knowledge base...")
     rules_embeddings = embed_model.encode(rules_chunks)
-    print("Knowledge Base Ready.")
+    print(f"Knowledge Base Ready: {len(rules_chunks)} rules indexed.")
 
-# Load rules immediately when server starts
+# Load immediately
 load_knowledge_base()
 
 def find_relevant_rules(contract_text):
-    """Uses Hugging Face to find the rules that match the contract."""
-    if rules_embeddings is None:
-        return "No rules database found."
-
-    # 1. Turn the contract text into numbers
-    # We only take the first 1000 chars to speed up the search query
+    if rules_embeddings is None: return "No rules database found."
+    
+    # Encode the first 1000 chars of the contract for search context
     query_embedding = embed_model.encode([contract_text[:1000]])
     
-    # 2. Compare contract numbers vs. rule numbers (Cosine Similarity)
+    # Calculate similarity
     similarities = cosine_similarity(query_embedding, rules_embeddings)[0]
     
-    # 3. Get Top 3 most relevant rules
-    # This sorts the results by highest match score
+    # Get top 3 matches
     top_indices = np.argsort(similarities)[-3:][::-1]
     
-    relevant_text = ""
-    for idx in top_indices:
-        relevant_text += f"- {rules_chunks[idx]}\n"
-        
-    return relevant_text
+    return "\n".join([f"- {rules_chunks[i]}" for i in top_indices])
 
 def extract_text_from_pdf(pdf_file):
     reader = PdfReader(pdf_file)
@@ -78,37 +54,41 @@ def extract_text_from_pdf(pdf_file):
         text += page.extract_text() or ""
     return text
 
+# --- ANALYSIS FUNCTION ---
 def analyze_contract(pdf_file):
     try:
-        print(f"Processing: {pdf_file}")
-        
-        # 1. Read the Student's Contract
+        # 1. Extract Text
         contract_text = extract_text_from_pdf(pdf_file)
         if not contract_text.strip():
-            return "Error: Empty or Scanned PDF."
+            return "Error: Could not read text from PDF."
 
-        # 2. SEARCH for relevant laws (Using Hugging Face)
-        print("Searching Knowledge Base for relevant policies...")
+        # 2. RAG Search
         relevant_laws = find_relevant_rules(contract_text)
-        print(f"Found relevant laws:\n{relevant_laws}")
 
-        # 3. Send relevant laws + Contract to Gemini
+        # 3. Construct Prompt
         prompt = f"""
-        You are an expert legal assistant. Compare the contract below against the provided Specific Rules.
+        You are an expert legal assistant. Compare the contract below against the provided Rules.
         
-        SPECIFIC RELEVANT LAWS:
+        RELEVANT RULES FROM DATABASE:
         {relevant_laws}
         
-        STUDENT CONTRACT:
+        CONTRACT TEXT:
         {contract_text}
         
         TASK:
-        Identify violations only based on the "Specific Relevant Laws" provided above.
-        Format the output as a clean Markdown table.
+        Identify violations based ONLY on the Rules provided above.
+        Format the output as a clean Markdown table with columns: 'Rule Violated', 'Description', and 'Offending Clause'.
+        If no violations are found, explicitly state "No Violations Found" in the table.
         """
 
-        response = chat_model.generate_content(prompt)
-        return response.text
+        # 4. Call GPT-4o
+        print(f"🤖 Analyzing with OpenAI GPT-4o...")
+        response = openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.1 # Low temperature for more factual responses
+        )
+        return response.choices[0].message.content
 
     except Exception as e:
         traceback.print_exc()

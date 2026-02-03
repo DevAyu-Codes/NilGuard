@@ -8,14 +8,17 @@ from bson import ObjectId
 import shutil
 import os
 import uuid
+from pymongo import MongoClient
 
 app = FastAPI()
 
-# --- 1. SETUP UPLOADS FOLDER ---
+# --- DATABASE ---
+client = MongoClient("mongodb://localhost:27017/")
+db = client.nil_guard_db
+
+# --- STORAGE ---
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Mount the folder so files can be accessed via URL (e.g., localhost:8000/uploads/file.pdf)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 app.add_middleware(
@@ -52,73 +55,61 @@ def login(creds: LoginRequest):
 def register_user(user: RegisterRequest):
     if users_collection.find_one({"username": user.username}):
         raise HTTPException(status_code=400, detail="User ID already exists!")
-    
-    new_user = {
-        "username": user.username,
-        "password": user.password,
-        "role": user.role,
-        "name": user.name
-    }
-    users_collection.insert_one(new_user)
-    return {"status": "success", "message": f"User {user.name} created successfully!"}
+    users_collection.insert_one(user.dict())
+    return {"status": "success", "message": "User created!"}
 
 # --- CONTRACT ROUTES ---
 @app.post("/analyze")
 async def analyze_upload(user_id: str, file: UploadFile = File(...)):
-    # 1. Generate a unique filename to prevent overwrites
+    # 1. Save File
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
     
-    # 2. Save the file PERMANENTLY to the uploads folder
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
     
     try:
-        # 3. Analyze the saved file
+        # 2. Analyze (Always uses GPT-4o now)
         ai_response = analyze_contract(file_path)
         
-        # 4. Save to Database with the FILE URL
+        # 3. Save to DB
         db_record = {
             "user_id": user_id,
-            "filename": file.filename,  # Original name for display
-            "file_url": f"http://localhost:8000/uploads/{unique_filename}", # Access link
+            "filename": file.filename,
+            "file_url": f"http://localhost:8000/uploads/{unique_filename}",
             "analysis": ai_response,
             "status": "AI_Reviewed",
+            "model_used": "GPT-4o",
             "timestamp": os.path.getmtime(file_path)
         }
         contracts_collection.insert_one(db_record)
         return {"status": "success", "data": ai_response}
     except Exception as e:
-        # If analysis fails, we still keep the file for debugging, or you could delete it here
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/send-to-nilgo")
-def send_to_nilgo(req: StatusUpdateRequest):
+# UPDATED: GENERIC STATUS UPDATE ENDPOINT
+# This handles "Sent_to_Compliance", "Approved", and "Rejected"
+@app.post("/update-status")
+def update_status(req: StatusUpdateRequest):
     result = contracts_collection.update_one(
-        {"_id": ObjectId(req.contract_id)},
+        {"_id": ObjectId(req.contract_id)}, 
         {"$set": {"status": req.status}}
     )
-    if result.modified_count == 1:
+    if result.modified_count == 1: 
         return {"status": "success"}
     raise HTTPException(status_code=404, detail="Contract not found")
 
 @app.get("/contracts/{role}/{user_id}")
 def get_contracts(role: str, user_id: str):
-    contracts = []
-    
     if role == "admin":
-        # FIX: Admin ONLY sees contracts that have been sent to compliance
-        # They should NOT see "AI_Reviewed" (Drafts)
-        cursor = contracts_collection.find({"status": "Sent_to_Compliance"})
+        # Admin sees pending submissions AND processed ones (to verify history)
+        cursor = contracts_collection.find({
+            "status": {"$in": ["Sent_to_Compliance", "Approved", "Rejected"]}
+        })
     else:
-        # Student sees all their own contracts (Drafts + Sent)
         cursor = contracts_collection.find({"user_id": user_id})
     
-    for doc in cursor:
-        doc["_id"] = str(doc["_id"])
-        contracts.append(doc)
-        
-    return contracts
+    return [{**doc, "_id": str(doc["_id"])} for doc in cursor]
 
 if __name__ == "__main__":
     import uvicorn
