@@ -100,6 +100,7 @@ Server will start at: `http://localhost:8000`
 ### Terminal 2: Frontend (React)
 #### To Test:
 ```bash
+cd frontend
 npm test
 ```
 #### To Run: 
