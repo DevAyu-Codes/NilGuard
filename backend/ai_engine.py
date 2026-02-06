@@ -5,16 +5,15 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 import traceback
 from pypdf import PdfReader
+import re
+import requests
 
 # --- CONFIGURATION ---
-# 1. OPENAI KEY (GPT-4o)
-OPENAI_API_KEY = "YOUR_API_KEY"
+OPENAI_API_KEY = "PASTE_YOUR_API_KEY_HERE""
 openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
-# 2. EMBEDDING MODEL (Hugging Face - Local)
 embed_model = SentenceTransformer('all-MiniLM-L6-v2') 
 
-# --- KNOWLEDGE BASE ---
 RULES_FILE = "ncaa_rules.txt"
 rules_embeddings = None
 rules_chunks = []
@@ -25,26 +24,17 @@ def load_knowledge_base():
         return
     with open(RULES_FILE, 'r') as f:
         text = f.read()
-    # Split by double newline to get distinct rules
     rules_chunks = [chunk.strip() for chunk in text.split('\n\n') if chunk.strip()]
     rules_embeddings = embed_model.encode(rules_chunks)
     print(f"Knowledge Base Ready: {len(rules_chunks)} rules indexed.")
 
-# Load immediately
 load_knowledge_base()
 
 def find_relevant_rules(contract_text):
     if rules_embeddings is None: return "No rules database found."
-    
-    # Encode the first 1000 chars of the contract for search context
     query_embedding = embed_model.encode([contract_text[:1000]])
-    
-    # Calculate similarity
     similarities = cosine_similarity(query_embedding, rules_embeddings)[0]
-    
-    # Get top 3 matches
     top_indices = np.argsort(similarities)[-3:][::-1]
-    
     return "\n".join([f"- {rules_chunks[i]}" for i in top_indices])
 
 def extract_text_from_pdf(pdf_file):
@@ -54,42 +44,78 @@ def extract_text_from_pdf(pdf_file):
         text += page.extract_text() or ""
     return text
 
-# --- ANALYSIS FUNCTION ---
 def analyze_contract(pdf_file):
     try:
-        # 1. Extract Text
         contract_text = extract_text_from_pdf(pdf_file)
         if not contract_text.strip():
             return "Error: Could not read text from PDF."
 
-        # 2. RAG Search
         relevant_laws = find_relevant_rules(contract_text)
 
-        # 3. Construct Prompt
         prompt = f"""
         You are an expert legal assistant. Compare the contract below against the provided Rules.
         
-        RELEVANT RULES FROM DATABASE:
+        RELEVANT RULES:
         {relevant_laws}
         
         CONTRACT TEXT:
         {contract_text}
         
         TASK:
-        Identify violations based ONLY on the Rules provided above.
-        Format the output as a clean Markdown table with columns: 'Rule Violated', 'Description', and 'Offending Clause'.
-        If no violations are found, explicitly state "No Violations Found" in the table.
+        Identify violations based ONLY on the Rules provided.
+        Output the result ONLY as a Markdown table with these columns: 'Rule Violated', 'Description', 'Offending Clause'.
+        Do not add introductory text. Do not use code blocks. Start directly with the table header.
         """
 
-        # 4. Call GPT-4o
         print(f"🤖 Analyzing with OpenAI GPT-4o...")
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[{"role": "user", "content": prompt}],
-            temperature=0.1 # Low temperature for more factual responses
+            temperature=0.1
         )
-        return response.choices[0].message.content
+        
+        raw_text = response.choices[0].message.content
+
+        # --- CLEANUP LOGIC ---
+        clean_text = re.sub(r"^```markdown\s*", "", raw_text, flags=re.MULTILINE)
+        clean_text = re.sub(r"^```\s*", "", clean_text, flags=re.MULTILINE)
+        clean_text = re.sub(r"```$", "", clean_text, flags=re.MULTILINE)
+        
+        lines = [line.strip() for line in clean_text.split('\n')]
+        return "\n".join(lines)
 
     except Exception as e:
         traceback.print_exc()
         return f"System Error: {str(e)}"
+
+def upload_to_gofile(file_path):
+    """
+    Uploads a file to Gofile.io and returns the public download link.
+    Works on both Linux and Windows.
+    """
+    try:
+        server_response = requests.get("https://api.gofile.io/servers")
+        server_data = server_response.json()
+        
+        if server_data['status'] != 'ok':
+            return None
+            
+        server = server_data['data']['servers'][0]['name']
+        
+        with open(file_path, "rb") as f:
+            upload_response = requests.post(
+                f"https://{server}.gofile.io/uploadFile",
+                files={"file": f}
+            )
+            
+        upload_data = upload_response.json()
+        
+        if upload_data['status'] == 'ok':
+            return upload_data['data']['downloadPage']
+        else:
+            print("Gofile Upload Error:", upload_data)
+            return None
+
+    except Exception as e:
+        print(f"Gofile Exception: {e}")
+        return None

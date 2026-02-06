@@ -5,7 +5,7 @@ db = client.nil_guard_db
 contracts_collection = db.contracts
 users_collection = db.users
 
-# --- SEED DATA (Run this once to create test users) ---
+# Creating test users and admins
 def seed_users():
     if users_collection.count_documents({}) == 0:
         users_collection.insert_many([

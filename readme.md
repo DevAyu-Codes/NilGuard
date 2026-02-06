@@ -40,7 +40,7 @@ It uses **Retrieval-Augmented Generation (RAG)** to cross-reference uploaded con
 
 ### 1. Clone the Repository
 ```bash
-git clone [https://github.com/your-username/nil-guard.git](https://github.com/your-username/nil-guard.git)
+git clone https://github.com/devayu-codes/NilGuard.git
 cd nil-guard
 ```
 ### 2. Database Setup
@@ -68,7 +68,11 @@ pip install -r requirements.txt
 #### ⚠️ Important Configuration:
 Open `backend/ai_engine.py` and replace the placeholder API key:
 ```python
-GOOGLE_API_KEY = "PASTE_YOUR_GEMINI_API_KEY_HERE"
+OPENAI_API_KEY = "PASTE_YOUR_API_KEY_HERE"
+```
+Open `frontend/src/App.jsx` and replace the placeholder email:
+```bash
+const recipient = "your-nilgo-email@nilgo.com";
 ```
 
 ### 4. Frontend Setup
@@ -78,6 +82,7 @@ Open a new terminal window.
 cd frontend
 npm install
 npm install axios react-markdown remark-gfm
+npm install --save-dev jest jest-environment-jsdom @testing-library/react @testing-library/jest-dom babel-jest @babel/preset-env @babel/preset-react identity-obj-proxy
 ```
 ---
 ## 🏃‍♂️ How to Run
@@ -93,6 +98,11 @@ python main.py
 Server will start at: `http://localhost:8000`
 
 ### Terminal 2: Frontend (React)
+#### To Test:
+```bash
+npm test
+```
+#### To Run: 
 ```bash
 cd frontend
 npm run dev

@@ -45,7 +45,6 @@ function Dashboard({ user, setUser }) {
   const [modal, setModal] = useState(null)
   const [newUser, setNewUser] = useState({ name: "", username: "", password: "", role: "student" })
   
-  // Track which contract is being acted upon
   const [pendingContract, setPendingContract] = useState(null)
 
   useEffect(() => { 
@@ -73,26 +72,55 @@ function Dashboard({ user, setUser }) {
     setLoading(false);
   }
 
-  // --- STUDENT: SUBMISSION LOGIC ---
   const handleSubmissionChoice = (choice) => {
     if (!pendingContract) return;
 
     if (choice === 'email') {
-      // Draft Email Logic
-      const recipient = "compliance@nil-guard.edu";
-      const subject = `NIL Contract Submission: ${pendingContract.filename}`;
-      const body = `Dear Compliance Office,\n\nI am submitting the attached contract for review.\n\nFile Reference: ${pendingContract.filename}\n\nStudent: ${user.name}\nID: ${user.user_id}`;
-      
-      window.open(`mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
-      setModal(null);
-    } 
-    else if (choice === 'website') {
-      // API Logic
-      updateContractStatus(pendingContract._id, "Sent_to_Compliance");
-    }
-  }
+      const recipient = "your-nilgo-email@nilgo.com";
+      const subject = `NIL Review Request: ${pendingContract.filename} - ${user.name}`;
 
-  // --- SHARED: STATUS UPDATER ---
+      let cleanAnalysis = pendingContract.analysis
+        .replace(/\|/g, " ") 
+        .replace(/-{3,}/g, "") 
+        .substring(0, 1500); 
+
+      const body = 
+`Dear Compliance Office,
+
+I am submitting the following Name, Image, and Likeness (NIL) contract for your official review and approval.
+
+--------------------------------------------------
+📄 DOCUMENT ACCESS
+--------------------------------------------------
+Title: ${pendingContract.filename}
+Secure Document Link: ${pendingContract.file_url}
+(Please click the link above to view or download the original PDF)
+
+--------------------------------------------------
+🤖 AI RISK ASSESSMENT SUMMARY
+--------------------------------------------------
+The system flagged the following potential concerns based on NCAA/State rules:
+
+${cleanAnalysis}
+
+--------------------------------------------------
+STUDENT DETAILS
+--------------------------------------------------
+Name: ${user.name}
+Student ID: ${user.user_id}
+Submission Date: ${new Date().toLocaleDateString()}
+
+Sincerely,
+${user.name}`;
+      
+    window.open(`mailto:${recipient}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`);
+    setModal(null);
+  } 
+  else if (choice === 'website') {
+    updateContractStatus(pendingContract._id, "Sent_to_Compliance");
+  }
+}
+
   const updateContractStatus = async (id, newStatus) => {
     try {
       await axios.post("http://localhost:8000/update-status", { contract_id: id, status: newStatus });
@@ -123,7 +151,7 @@ function Dashboard({ user, setUser }) {
         <Modal 
           data={modal} 
           close={() => setModal(null)} 
-          onChoice={handleSubmissionChoice} // For the new Choice Modal
+          onChoice={handleSubmissionChoice}
         />
       )}
 
@@ -219,7 +247,6 @@ function Dashboard({ user, setUser }) {
 }
 
 function Modal({ data, close, onChoice }) {
-  // SPECIAL MODAL: Submission Choice
   if (data.type === 'submission_choice') {
     return (
       <div className="modal-overlay" onClick={close}>

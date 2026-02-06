@@ -9,14 +9,13 @@ import shutil
 import os
 import uuid
 from pymongo import MongoClient
+from ai_engine import analyze_contract, upload_to_gofile
 
 app = FastAPI()
 
-# --- DATABASE ---
 client = MongoClient("mongodb://localhost:27017/")
 db = client.nil_guard_db
 
-# --- STORAGE ---
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
@@ -28,7 +27,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- MODELS ---
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -43,7 +41,6 @@ class StatusUpdateRequest(BaseModel):
     contract_id: str
     status: str
 
-# --- AUTH ROUTES ---
 @app.post("/login")
 def login(creds: LoginRequest):
     user = users_collection.find_one({"username": creds.username, "password": creds.password})
@@ -58,10 +55,8 @@ def register_user(user: RegisterRequest):
     users_collection.insert_one(user.dict())
     return {"status": "success", "message": "User created!"}
 
-# --- CONTRACT ROUTES ---
 @app.post("/analyze")
 async def analyze_upload(user_id: str, file: UploadFile = File(...)):
-    # 1. Save File
     unique_filename = f"{uuid.uuid4()}_{file.filename}"
     file_path = os.path.join(UPLOAD_DIR, unique_filename)
     
@@ -69,14 +64,19 @@ async def analyze_upload(user_id: str, file: UploadFile = File(...)):
         shutil.copyfileobj(file.file, buffer)
     
     try:
-        # 2. Analyze (Always uses GPT-4o now)
         ai_response = analyze_contract(file_path)
+
+        print("🌍 Uploading to Gofile...")
+        public_url = upload_to_gofile(file_path)
         
-        # 3. Save to DB
+        if not public_url:
+            public_url = "Error: Could not generate public link"
+
         db_record = {
             "user_id": user_id,
             "filename": file.filename,
-            "file_url": f"http://localhost:8000/uploads/{unique_filename}",
+            "file_url": public_url,
+            "local_path": file_path,
             "analysis": ai_response,
             "status": "AI_Reviewed",
             "model_used": "GPT-4o",
@@ -87,8 +87,6 @@ async def analyze_upload(user_id: str, file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# UPDATED: GENERIC STATUS UPDATE ENDPOINT
-# This handles "Sent_to_Compliance", "Approved", and "Rejected"
 @app.post("/update-status")
 def update_status(req: StatusUpdateRequest):
     result = contracts_collection.update_one(
@@ -102,7 +100,6 @@ def update_status(req: StatusUpdateRequest):
 @app.get("/contracts/{role}/{user_id}")
 def get_contracts(role: str, user_id: str):
     if role == "admin":
-        # Admin sees pending submissions AND processed ones (to verify history)
         cursor = contracts_collection.find({
             "status": {"$in": ["Sent_to_Compliance", "Approved", "Rejected"]}
         })
